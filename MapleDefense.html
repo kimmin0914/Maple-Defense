@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Maple Typing Defense</title>
+    <link href="https://fonts.googleapis.com/css2?family=Jua&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background: #e0f2f1; 
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; overflow: hidden;
+            font-family: 'Jua', sans-serif; 
+        }
+        
+        #game-container {
+            position: relative; width: 800px; height: 650px;
+            background: #6DD5FA; 
+            border: 4px solid #C49A6C; 
+            border-radius: 8px;
+            box-shadow: 0px 10px 20px rgba(0, 0, 0, 0.2);
+            overflow: hidden;
+        }
+
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.85); 
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 10; text-align: center;
+        }
+
+        .overlay h1 {
+            font-size: 55px; color: #FF9900;
+            text-shadow: 2px 2px 0px #000, -2px -2px 0px #000, 2px -2px 0px #000, -2px 2px 0px #000;
+            margin-bottom: 20px;
+        }
+
+        .overlay p { font-size: 26px; color: #333; animation: blink 1.5s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+        
+        canvas { display: block; width: 800px; height: 550px; }
+        
+        #ui-bar {
+            height: 100px; background: #E8F0F4;
+            border-top: 3px solid #B0C4DE; display: flex; flex-direction: column;
+            justify-content: center; padding: 0 30px; box-sizing: border-box;
+            box-shadow: inset 0px 5px 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .status-row { display: flex; justify-content: space-between; font-size: 20px; color: #444; margin-bottom: 10px; }
+        .input-row { font-size: 22px; color: #222; display: flex; align-items: center; }
+        
+        #typing-input { 
+            background: #FFF; border: 2px solid #CCC; border-radius: 4px;
+            outline: none; color: #000; font-size: 22px; font-family: 'Jua', sans-serif;
+            padding: 2px 10px; margin-left: 10px; width: 300px;
+            box-shadow: inset 1px 1px 3px rgba(0,0,0,0.1);
+        }
+        #typing-input:focus { border-color: #6DD5FA; }
+
+        .level-up-anim {
+            animation: levelUp 0.5s ease-in-out;
+            color: #FF0000 !important;
+        }
+        @keyframes levelUp {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.5); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <div id="start-screen" class="overlay">
+            <h1>MAPLE TYPING DEFENSE</h1>
+            <p>아무 키나 눌러서 시작하세요</p>
+        </div>
+        <div id="game-over-screen" class="overlay" style="display: none; background: rgba(0, 0, 0, 0.85);">
+            <h1 style="color: #FF3333;">비석을 세웠습니다...</h1>
+            <h2 id="final-score" style="color: #FFD700; font-size: 35px; text-shadow: 2px 2px 0px #000;"></h2>
+            <p style="font-size: 20px; color: #FFF; margin-top: 30px; animation: none;">새로고침(F5)하여 부활하세요.</p>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="550"></canvas>
+
+        <div id="ui-bar">
+            <div class="status-row">
+                <span id="score-display">경험치(점수) : 0</span>
+                <span id="level-display" style="color: #FF9900; font-weight: bold;">레벨 : 1</span>
+                <span id="health-display" style="color: #D32F2F;">남은 HP : 5</span>
+            </div>
+            <div class="input-row">
+                [전체] 유저 : <input type="text" id="typing-input" autocomplete="off" spellcheck="false" autofocus>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const scoreDisplay = document.getElementById("score-display");
+        const levelDisplay = document.getElementById("level-display");
+        const healthDisplay = document.getElementById("health-display");
+        const typingInput = document.getElementById("typing-input");
+        const startScreen = document.getElementById("start-screen");
+        const gameOverScreen = document.getElementById("game-over-screen");
+        const finalScoreDisplay = document.getElementById("final-score");
+
+        const wordDict = [
+            // 초보자 ~ 엘나스 
+            { word: "달팽이", emoji: "🐌" }, { word: "파란달팽이", emoji: "🐚" }, { word: "빨간달팽이", emoji: "🍎" },
+            { word: "스포아", emoji: "🍄" }, { word: "주황버섯", emoji: "🍄" }, { word: "초록버섯", emoji: "🥦" },
+            { word: "뿔버섯", emoji: "🪨" }, { word: "슬라임", emoji: "💧" }, { word: "버블링", emoji: "🫧" }, { word: "리본돼지", emoji: "🐷" },
+            { word: "엑스텀프", emoji: "🪵" }, { word: "와일드보어", emoji: "🐗" }, { word: "파이어보어", emoji: "🔥" },
+            { word: "옥토퍼스", emoji: "🐙" }, { word: "크로코", emoji: "🐊" }, { word: "커즈아이", emoji: "👁️" },
+            { word: "콜드아이", emoji: "❄️" }, { word: "루팡", emoji: "🐒" }, { word: "좀비루팡", emoji: "🧟‍♂️" }, { word: "멜러디", emoji: "🧙‍♀️" },
+            { word: "러스터픽시", emoji: "🌟" }, { word: "루이넬", emoji: "🐈‍⬛" }, { word: "헥터", emoji: "🐺" },
+            { word: "예티", emoji: "⛄" }, { word: "페페", emoji: "🐧" }, { word: "다크페페", emoji: "🖤" },
+            { word: "라이칸스로프", emoji: "🐺" }, { word: "쿨리좀비", emoji: "🧟" }, { word: "마이너좀비", emoji: "⛏️" }, { word: "불독", emoji: "🐶" },
+            // 보스 & 아이템
+            { word: "자쿰", emoji: "🗿" }, { word: "혼테일", emoji: "🐉" }, { word: "핑크빈", emoji: "💖" },
+            { word: "매그너스", emoji: "😈" }, { word: "스우", emoji: "⚙️" }, { word: "데미안", emoji: "🗡️" },
+            { word: "루시드", emoji: "🦋" }, { word: "윌", emoji: "🕷️" }, { word: "검은마법사", emoji: "🌑" }, { word: "발록", emoji: "🦇" },
+            { word: "반반", emoji: "🐔" }, { word: "피에르", emoji: "🤡" }, { word: "블러디퀸", emoji: "👸" },
+            { word: "벨룸", emoji: "🐛" }, { word: "파풀라투스", emoji: "⏰" }, { word: "우르스", emoji: "🐻" },
+            { word: "럭키세븐", emoji: "✴️" }, { word: "헤이스트", emoji: "💨" }, { word: "메소", emoji: "💰" }, { word: "코어젬스톤", emoji: "💎" },
+            // 🌟 낭만의 머쉬맘 & 귀여운 무릉도원 몬스터 10종 추가!
+            { word: "머쉬맘", emoji: "🍄👑" }, 
+            { word: "도라지", emoji: "🌱" }, 
+            { word: "늙은도라지", emoji: "🍂" },
+            { word: "별다람쥐", emoji: "🐿️" }, 
+            { word: "호돌이", emoji: "🐯" }, 
+            { word: "호걸", emoji: "🐅" },
+            { word: "원공", emoji: "🐵" }, 
+            { word: "천록", emoji: "🦌" }, 
+            { word: "비급", emoji: "📜" }, 
+            { word: "묘선", emoji: "🐈" }, 
+            { word: "요괴선사", emoji: "😼" }
+        ];
+
+        let gameState = 0; 
+        let score = 0;
+        let currentLevel = 1; 
+        let health = 5;
+        let enemies = []; 
+        let cloudPos = 0; 
+        const MAX_ENEMIES = 4; 
+
+        // 🌟 단어 중복 스폰을 막는 꼼꼼한 함수!
+        function spawnEnemy(index) {
+            let randomObj;
+            let isDuplicate;
+
+            // 중복이 안 나올 때까지 뽑기를 계속 반복하는 로직 (do-while)
+            do {
+                isDuplicate = false;
+                randomObj = wordDict[Math.floor(Math.random() * wordDict.length)];
+                
+                // 현재 살아있는 적들 중에 방금 뽑은 단어가 이미 있는지 검사
+                for (let i = 0; i < enemies.length; i++) {
+                    // 자기 자신(index)은 제외하고, 살아있는 놈들 중 이름이 같은 게 있다면?
+                    if (i !== index && enemies[i] && enemies[i].alive && enemies[i].word === randomObj.word) {
+                        isDuplicate = true; // "어 중복이다! 다시 뽑아!"
+                        break;
+                    }
+                }
+            } while (isDuplicate);
+
+            let speedBonus = (currentLevel - 1) * 0.15; 
+            let finalSpeed = 0.2 + speedBonus + (Math.random() * 0.3);
+
+            enemies[index] = {
+                word: randomObj.word,
+                emoji: randomObj.emoji,
+                x: Math.random() * (canvas.width - 200) + 50, 
+                y: -(Math.random() * 250) - 50, 
+                alive: true,
+                speed: finalSpeed 
+            };
+        }
+
+        for (let i = 0; i < MAX_ENEMIES; i++) {
+            spawnEnemy(i);
+            enemies[i].y -= i * 150; 
+        }
+
+        document.addEventListener("click", () => typingInput.focus());
+        typingInput.addEventListener("blur", () => {
+            if(gameState === 1) typingInput.focus();
+        });
+
+        typingInput.addEventListener("keydown", (e) => {
+            if (gameState === 0) {
+                gameState = 1;
+                startScreen.style.display = "none";
+                typingInput.value = ""; 
+                gameLoop(); 
+                return;
+            }
+            if (gameState !== 1) return;
+
+            if (e.key === "Enter") {
+                let typedWord = typingInput.value.trim(); 
+
+                for (let i = 0; i < MAX_ENEMIES; i++) {
+                    if (enemies[i].alive && enemies[i].word === typedWord) {
+                        enemies[i].alive = false; 
+                        score += 10;
+                        scoreDisplay.innerText = `경험치(점수) : ${score}`;
+                        
+                        let newLevel = Math.floor(score / 100) + 1;
+                        if (newLevel > currentLevel) {
+                            currentLevel = newLevel;
+                            levelDisplay.innerText = `레벨 : ${currentLevel}`;
+                            levelDisplay.classList.remove("level-up-anim");
+                            void levelDisplay.offsetWidth; 
+                            levelDisplay.classList.add("level-up-anim");
+                        }
+
+                        spawnEnemy(i);
+                        break; 
+                    }
+                }
+                typingInput.value = ""; 
+            }
+        });
+
+        function drawBackground() {
+            let bgGradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+            bgGradient.addColorStop(0, "#6DD5FA");
+            bgGradient.addColorStop(1, "#FFFFFF");
+            ctx.fillStyle = bgGradient;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            cloudPos += 0.3;
+            if (cloudPos > canvas.width + 100) cloudPos = -200;
+            
+            ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.beginPath();
+            ctx.arc(cloudPos, 100, 30, 0, Math.PI * 2);
+            ctx.arc(cloudPos + 40, 100, 40, 0, Math.PI * 2);
+            ctx.arc(cloudPos + 80, 100, 30, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.save();
+            ctx.translate(650, canvas.height - 30); 
+
+            ctx.fillStyle = "#F5DEB3"; 
+            ctx.beginPath();
+            ctx.rect(-50, -100, 100, 100);
+            ctx.fill();
+
+            ctx.fillStyle = "#8B4513";
+            ctx.beginPath();
+            ctx.arc(0, -30, 20, Math.PI, 0); 
+            ctx.fillRect(-20, -30, 40, 30);  
+            ctx.fill();
+
+            ctx.fillStyle = "#FF8C00";
+            ctx.beginPath();
+            ctx.arc(0, -100, 90, Math.PI, 0); 
+            ctx.fill();
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.beginPath(); ctx.arc(-45, -130, 15, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(35, -150, 18, 0, Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(25, -110, 12, 0, Math.PI*2); ctx.fill();
+
+            ctx.restore(); 
+        }
+
+        function gameLoop() {
+            if (gameState !== 1) return;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            drawBackground();
+
+            ctx.fillStyle = "#81C14B"; 
+            ctx.fillRect(0, canvas.height - 30, canvas.width, 10); 
+            ctx.fillStyle = "#A47C54"; 
+            ctx.fillRect(0, canvas.height - 20, canvas.width, 20); 
+            
+            ctx.font = "20px 'Jua', sans-serif";
+            ctx.fillStyle = "white";
+            ctx.strokeStyle = "black";
+            ctx.lineWidth = 3;
+            let floorText = "▶ 몬스터가 여기까지 내려오면 HP가 깎입니다 ◀";
+            let textX = canvas.width/2 - 190;
+            let textY = canvas.height - 8;
+            ctx.strokeText(floorText, textX, textY); 
+            ctx.fillText(floorText, textX, textY);   
+
+            for (let i = 0; i < MAX_ENEMIES; i++) {
+                if (enemies[i].alive) {
+                    enemies[i].y += enemies[i].speed; 
+
+                    if (enemies[i].y >= canvas.height - 30) { 
+                        enemies[i].alive = false;
+                        health--;
+                        healthDisplay.innerText = `남은 HP : ${health}`;
+                        
+                        document.getElementById("game-container").style.borderColor = "red";
+                        setTimeout(() => document.getElementById("game-container").style.borderColor = "#C49A6C", 100);
+                        
+                        spawnEnemy(i); 
+                        if (health <= 0) {
+                            gameState = 2; 
+                            typingInput.blur(); 
+                        }
+                    }
+
+                    ctx.font = "45px Arial";
+                    ctx.fillText(enemies[i].emoji, enemies[i].x + (enemies[i].word.length * 4), enemies[i].y - 30);
+
+                    ctx.font = "26px 'Jua', sans-serif";
+                    ctx.lineWidth = 4; 
+                    ctx.strokeStyle = "black"; 
+                    ctx.fillStyle = "white"; 
+                    
+                    ctx.strokeText(enemies[i].word, enemies[i].x, enemies[i].y); 
+                    ctx.fillText(enemies[i].word, enemies[i].x, enemies[i].y);   
+                }
+            }
+
+            if (gameState === 2) {
+                gameOverScreen.style.display = "flex";
+                finalScoreDisplay.innerText = `최종 경험치 : ${score} (달성 레벨: ${currentLevel})`;
+            } else {
+                requestAnimationFrame(gameLoop); 
+            }
+        }
+    </script>
+</body>
+</html>
